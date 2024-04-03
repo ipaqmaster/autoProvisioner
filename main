@@ -1,0 +1,284 @@
+#!/bin/bash
+scriptName=$(readlink -f $0)
+scriptRoot=$(dirname $(readlink -f $0))
+scriptDirName=$(basename $scriptRoot)
+threadCount=$(grep ^processor /proc/cpuinfo |wc -l)
+
+
+
+#    _
+#   / \   _ __ __ _ ___
+#  / _ \ | '__/ _` / __|
+# / ___ \| | | (_| \__ \
+#/_/   \_\_|  \__, |___/
+#             |___/
+
+while [ $# -gt 0 ]
+do
+  case "$(tr '[:upper:]' '[:lower:]'<<<$1)" in
+    -debug)
+      DEBUG=1
+    ;;
+    -postinjectfiles|-post-inject-files)
+      postInjectFiles=($2)
+      for file in ${postInjectFiles[@]}
+      do
+        [ ! -f "$file" ] && echo "Post injection file $file not found."
+        exit 1
+      done
+      echo "Will inject these files to the %POST section of the kickstart script: "
+      echo -e "\t${postInjectFiles}"
+    ;;
+    -skipvarsiffilled|-skip-vars-if-filled)
+      echo "Will skip var prompt if all values are filled."
+      skipIfFilled=1
+    ;;
+    -image|-iso)
+      Image="$2"
+      shift
+      echo "If a valid install source will use [${Image}] without prompt."
+    ;;
+    -passwd|-p|-password)
+      vsphere_password="${2}"
+      [ -n "${2}" ] && echo "Need a password as argument." && exit 1
+      shift
+      echo "Will give terraform password via stdin."
+      terraformAdditionalArgs="-input=false -var-file /dev/stdin <<< vsphere_password=${vsphere_password}"
+    ;;
+    *)
+      echo "Unrecognised option: $1"
+      exit 1
+  esac
+  shift
+done
+
+#  ____
+# |  _ \ _ __ ___ _ __
+# | |_) | '__/ _ \ '_ \
+# |  __/| | |  __/ |_) |
+# |_|   |_|  \___| .__/
+#                |_|
+
+git -C ${_scriptRoot} submodule update --recursive --remote
+
+if [ -f ".vars" ]
+then
+  . .vars
+else
+  . .vars.example
+fi
+
+fieldsNeeded=(  repoAddress
+                webRoot
+                isoDir
+                kickstartDir 
+                vsphere_server
+                vsphere_datacenter
+                vsphere_compute_cluster
+                vsphere_datastore_cluster
+                vsphere_iso_datastore
+                vsphere_iso_DestDir
+                vsphere_network
+                vsphere_username
+                vsphere_guest_cores
+                vsphere_guest_memory_megabytes
+                vsphere_guest_folder
+                guestHostname
+                guestRootPassword
+                guestAddress
+                guestSubnet
+                guestGateway
+                guestDns
+                guestTimezone
+                guestDisableIPv6 )
+
+# Skip prompt if all fields are pre-filled and -skipVarsIfFilled were specified. Error otherwise.
+if [ -n "${skipIfFilled}" ]
+then
+ if [ ! -f ".vars" ]
+ then
+   echo ".vars missing. Cannot skip fill screen."
+   exit 1
+ fi
+  for field in ${fieldsNeeded[@]}
+  do
+    [ -z "$(eval echo \$$field)" ] && echo "$field unset." && missing=1
+  done
+  if [ -n "$missing" ]
+  then
+    exit 1
+  else
+    skipPrompt=1
+  fi
+fi
+
+# Show a dialog for filling or changing vars by default.
+if [ -z "${skipPrompt}" ]
+then
+  formOptions=("dialog" "--single-quoted" "--quoted" "--title" "Settings" "--form" "" "0" "0" "0")
+
+  for field in "${fieldsNeeded[@]}"
+  do
+    ((inc++))
+    formOptions+=("${field}" "${inc}" "1" "${!field}" "${inc}" "30" "30" "100")
+  done
+
+  Answers="$("${formOptions[@]}" 2>&1 >/dev/tty)"
+  if [ $? -ne 0 ]
+  then
+    echo "Dialog didn't return correctly. Exiting."
+    exit 1
+  fi
+  Answers="$(awk '{ print "\""$0"\""}' <<< "$Answers")"
+
+  # Combine answers with required fields
+  #paste -d'=' <(echo "${fieldsNeeded[@]}") <(echo "$Answers")
+  vars="$(paste -d'=' <(IFS=$'\n' ; echo "${fieldsNeeded[*]}") <(echo "$Answers"))"
+
+  echo "${vars}" > .vars
+  . .vars
+fi
+
+#  __  __       _
+# |  \/  | __ _(_)_ __
+# | |\/| |/ _` | | '_ \
+# | |  | | (_| | | | | |
+# |_|  |_|\__,_|_|_| |_|
+#
+
+cd ${scriptRoot} || { echo "Something went wrong trying to enter the script's working directory"; exit 1;}
+git submodule init
+git submodule update
+
+requiredPackages=(syslinux make genisoimage xorriso)
+
+for dep in ${requiredPackages[@]}
+do
+  rpm -q "$dep" >/dev/null 2>&1 || requiredPackagesMissing+=(${dep})
+done
+
+if [[ -n "${requiredPackagesMissing[@]}" ]]
+then
+  echo "Missing these packages: ${requiredPackagesMissing[@]}"
+  exit 1
+fi
+
+# Check IP not in use
+guestAddressOnly="$(cut -d'/' -f1 <<< ${guestAddress})"
+if ping -c1 -W0.2 ${guestAddressOnly} 2>&1 >/dev/null
+then
+  echo "IP ${guestAddressOnly} is actively responding to pings. Pick a different one!"
+  exit 1
+fi
+
+if [ -z "${guestHostname}" ]
+then
+  echo "Need guestHostname"
+  exit 1
+fi
+
+# Get a list of mounted ISOs from isoManager
+for iso in /repo/ISOs/* ; do isoList+=("$(basename "${iso}")") ; done # Hardcoded path to be made dynamic.
+
+# Check if a custom image has been specified.
+if [ -n "${Image}" ]
+then
+  if [[ ${isoList[@]} =~ "${Image}" ]]
+  then
+    echo "${Image} found in isolist, continuing."
+    selection="${Image}"
+  else
+    echo "${Image} not found in isolist. Available: ${isoList[@]}"
+    exit 1
+  fi
+fi
+
+# Prompt for image by default
+[ -z "${selection}" ] && selection=$(dialog --noclear --no-items --title "Install options" --menu "Pick one" 0 0 0 "${isoList[@]}" 2>&1 >/dev/tty)
+
+selectionSafe="$(tr ' ' '_' <<<${selection})"
+selectionKickstartBase="${selection}.cfg"
+selectionIpxe="${selection}.ipxe"
+if [ ! -f "${selectionKickstartBase}" ]
+then
+  echo "Missing kickstart: ${selectionKickstartBase}:"
+  ((errors++))
+fi
+
+if [ ! -f "${selectionIpxe}" ]
+then
+  echo "Missing Ipxe: ${selectionIpxe}:"
+  ((errors++))
+fi
+
+if [ -n "${errors}" ]
+then
+  echo "Cannot continue, experienced ${errors} errors."
+  exit 1
+fi
+
+# IPXE build step
+pushd ipxe/src
+cp -v "${scriptRoot}/${selectionIpxe}" ./${selectionSafe}.ipxe # Make a safely formatted copy local to ipxe as EMBED doesn't work otherwise.
+sed -i "0,/baseUrl/{s|baseUrl|& ${repoAddress}|}"   ./${selectionSafe}.ipxe # Substitute in our repo address.
+sed -i "0,/isoDir/{s|isoDir|& ${isoDir}|}"                 ./${selectionSafe}.ipxe # Substitute in our isoDir
+sed -i "0,/ksDir/{s|ksDir|& ${kickstartDir}|}"             ./${selectionSafe}.ipxe # Substitute in our kickstartDir
+sed -i "0,/Distro/{s|Distro|& ${selection}|}"              ./${selectionSafe}.ipxe # Substitute in our Distro
+echo "Building custom image for this guest with $threadCount threads..."
+#make clean
+make -j${threadCount} bin-x86_64-efi/ipxe.iso EMBED=${selectionSafe}.ipxe
+popd
+
+# Terraform step
+
+cp -v "${scriptRoot}/${selectionKickstartBase}" "${webRoot}/${kickstartDir}" # Make a safely formatted copy local to ipxe as EMBED doesn't work otherwise.
+if [ -n "${guestAddress}" ]
+then
+  [ -z "${guestSubnet}" ]  && { echo "Need guestSubnet"  ; exit 1 ;}
+  [ -z "${guestGateway}" ] && { echo "Need guestGateway" ; exit 1 ;}
+  [ -z "${guestDns}" ]     && { echo "Need guestDns"     ; exit 1 ;}
+  guestSearch="$(cut -f2,3 -d'.' <<< ${guestHostname})"
+  echo "Setting guest search domain as '${guestSearch}' assumed from FQDN."
+
+  [ -n "$guestDisableIPv6" ] && guestDisableIPv6='--noipv6'
+
+# Ignoring search domain for now, not possible here
+NETWORKING="--bootproto=static --hostname=${guestHostname} --ip=${guestAddress} --netmask=${guestSubnet} --gateway=${guestGateway} --nameserver=${guestDns}"
+else
+NETWORKING="--bootproto=dhcp --hostname=${guestAddress}"
+fi
+
+# Check for post injection files and default post injection files:
+
+if [ -n "${guestSearch}.post" ]
+then
+  echo "Adding domain kickstart-post script ${guestSearch}.post"
+  postInjectFiles+=(${guestSearch}.post)
+fi
+
+
+if [ -n ${postInjectFiles[@]} ] # Inject any post-install scripts.
+then
+  echo "Injecting %POST scripts: ${postInjectFiles[@]}"
+  sed -i "/.*%POSTINJECTION%.*/r /dev/stdin" "${webRoot}/${kickstartDir}/${selectionKickstartBase}" <<< "$(cat ${postInjectFiles[@]})"
+fi
+
+sed -i -E "s/.*%NETWORK%.*/network --activate ${guestDisableIPv6} ${NETWORKING}/g" "${webRoot}/${kickstartDir}/${selectionKickstartBase}" || { echo "Something went wrong inserting variables." ; exit 1 ;}
+sed -i -E "s/.*%guestSearch%.*/${guestSearch}/g"                                   "${webRoot}/${kickstartDir}/${selectionKickstartBase}" || { echo "Something went wrong inserting variables." ; exit 1 ;}
+sed -i -E "s/%guestTimezone%/${guestTimezone/\//\\/}/g"                            "${webRoot}/${kickstartDir}/${selectionKickstartBase}" || { echo "Something went wrong inserting variables." ; exit 1 ;}
+
+if ! [[ "${guestRootPassword}" =~ ^\$6 ]]
+then
+  guestRootPassword="$(echo -ne "${guestRootPassword}" | openssl passwd -6 -stdin)"
+fi
+
+sed -i -E "s/%guestRootPassword%/${guestRootPassword////\\/}/g"                           "${webRoot}/${kickstartDir}/${selectionKickstartBase}"
+
+rm -fv terraform.tfstate
+#TF_LOG=TRACE terraform apply -var-file .vars -compact-warnings
+terraform apply -var-file .vars -compact-warnings ${terraformAdditionalArgs}
+echo exit code of terraform is $?
+
+# Cleanup
+#rm -v "ipxe/src/${selectionSafe}.ipxe"
+#rm -v "${webRoot}/${kickstartDir}/${selectionKickstartBase}"
