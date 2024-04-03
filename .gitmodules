@@ -1,3 +1,6 @@
 [submodule "ipxe"]
 	path = ipxe
 	url = https://github.com/ipxe/ipxe
+[submodule "isoManager"]
+	path = isoManager
+	url = https://github.com/ipaqmaster/isoManager
