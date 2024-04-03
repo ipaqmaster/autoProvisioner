@@ -1,2 +1,4 @@
-.vars
-*.post
+.vars*
+*.post*
+*.tfstate*
+.terraform*
