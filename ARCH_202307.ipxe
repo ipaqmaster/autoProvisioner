@@ -1,0 +1,9 @@
+#!ipxe
+dhcp || shell
+set baseUrl
+set isoDir
+set ksDir
+set Distro
+initrd ${baseUrl}/${isoDir}/${Distro}/arch/boot/x86_64/initramfs-linux.img || shell
+kernel ${baseUrl}/${isoDir}/${Distro}/arch/boot/x86_64/vmlinuz-linux ip=dhcp archiso_http_srv=${baseUrl}/${isoDir}/${Distro}/ archisobasedir=arch cms_verify=y script=${baseUrl}/${ksDir}/${Distro:uristring}.cfg || shell
+boot || shell
