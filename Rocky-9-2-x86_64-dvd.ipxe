@@ -13,7 +13,7 @@ echo Opening net0
 ifopen net0 || shell
 
 initrd ${baseUrl}/${isoDir}/${Distro}/images/pxeboot/initrd.img || shell
-kernel ${baseUrl}/${isoDir}/${Distro}/images/pxeboot/vmlinuz raid=noautodetect ip=dhcp boot=live:${baseUrl}/${isoDir}/${Distro:uristring}/LiveOS/squashfs.img initrd=initrd.img inst.repo=${baseUrl}/${isoDir}/${Distro:uristring} inst.ks=${baseUrl}/${ksDir}/${Distro:uristring}.cfg inst.sshd || shell
+kernel ${baseUrl}/${isoDir}/${Distro}/images/pxeboot/vmlinuz raid=noautodetect ip=${ip}::${gateway}:${netmask}:::none:${dns} boot=live:${baseUrl}/${isoDir}/${Distro:uristring}/LiveOS/squashfs.img initrd=initrd.img inst.repo=${baseUrl}/${isoDir}/${Distro:uristring} inst.ks=${baseUrl}/${ksDir}/${Distro:uristring}.cfg inst.sshd || shell
 boot || shell
 
 # Check if inst.ks is correct
