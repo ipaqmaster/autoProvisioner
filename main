@@ -220,10 +220,18 @@ fi
 # IPXE build step
 pushd ipxe/src
 cp -v "${scriptRoot}/${selectionIpxe}" ./${selectionSafe}.ipxe # Make a safely formatted copy local to ipxe as EMBED doesn't work otherwise.
-sed -i "0,/baseUrl/{s|baseUrl|& ${repoAddress}|}"   ./${selectionSafe}.ipxe # Substitute in our repo address.
-sed -i "0,/isoDir/{s|isoDir|& ${isoDir}|}"                 ./${selectionSafe}.ipxe # Substitute in our isoDir
-sed -i "0,/ksDir/{s|ksDir|& ${kickstartDir}|}"             ./${selectionSafe}.ipxe # Substitute in our kickstartDir
-sed -i "0,/Distro/{s|Distro|& ${selection}|}"              ./${selectionSafe}.ipxe # Substitute in our Distro
+
+sed -i "0,/set baseUrl/{s|set baseUrl|& ${repoAddress}|}"   ./${selectionSafe}.ipxe # Substitute in our repo address.
+sed -i "0,/set isoDir/{s|set isoDir|& ${isoDir}|}"                 ./${selectionSafe}.ipxe # Substitute in our isoDir
+sed -i "0,/set ksDir/{s|set ksDir|& ${kickstartDir}|}"             ./${selectionSafe}.ipxe # Substitute in our kickstartDir
+sed -i "0,/set Distro/{s|set Distro|& ${selection}|}"              ./${selectionSafe}.ipxe # Substitute in our Distro
+
+
+sed -i "0,/set net0\/ip/{s|set net0\/ip|& ${guestAddress}|}"                   ./${selectionSafe}.ipxe # Substitute in our ip
+sed -i "0,/set net0\/netmask/{s|set net0\/netmask|& ${guestSubnet}|}"          ./${selectionSafe}.ipxe # Substitute in our netmask
+sed -i "0,/set net0\/dns/{s|set net0\/dns|& ${guestDns/,*/}|}"                 ./${selectionSafe}.ipxe # Substitute in our dns
+sed -i "0,/set net0\/gateway/{s|set net0\/gateway|& ${guestGateway}|}"         ./${selectionSafe}.ipxe # Substitute in our gateway
+
 echo "Building custom image for this guest with $threadCount threads..."
 #make clean
 make -j${threadCount} bin-x86_64-efi/ipxe.iso EMBED=${selectionSafe}.ipxe
@@ -234,9 +242,11 @@ popd
 cp -v "${scriptRoot}/${selectionKickstartBase}" "${webRoot}/${kickstartDir}" # Make a safely formatted copy local to ipxe as EMBED doesn't work otherwise.
 if [ -n "${guestAddress}" ]
 then
+  [ -z "${guestAddress}" ] && { echo "Need guestAddress" ; exit 1 ;}
   [ -z "${guestSubnet}" ]  && { echo "Need guestSubnet"  ; exit 1 ;}
   [ -z "${guestGateway}" ] && { echo "Need guestGateway" ; exit 1 ;}
   [ -z "${guestDns}" ]     && { echo "Need guestDns"     ; exit 1 ;}
+
   guestSearch="$(cut -f2,3 -d'.' <<< ${guestHostname})"
   echo "Setting guest search domain as '${guestSearch}' assumed from FQDN."
 
