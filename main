@@ -248,13 +248,6 @@ echo "Building custom image for this guest with $threadCount threads..."
 make -j${threadCount} bin-x86_64-efi/ipxe.iso EMBED=${selectionSafe}.ipxe
 popd
 
-if [ -n "${generate_only}" ]
-then
-  echo "Stopping here as --generate were specified."
-  ls -lah ipxe/src/bin-x86_64-efi/ipxe.iso
-  exit
-fi
-
 # Terraform step
 
 cp -v "${scriptRoot}/${selectionKickstartBase}" "${webRoot}/${kickstartDir}" # Make a safely formatted copy local to ipxe as EMBED doesn't work otherwise.
@@ -312,6 +305,15 @@ then
 fi
 
 sed -i -E "s/%guestRootPassword%/${guestRootPassword////\\/}/g"                           "${webRoot}/${kickstartDir}/${selectionKickstartBase}"
+
+# Prep and gen only
+if [ -n "${generate_only}" ]
+then
+  echo "Stopping here as --generate were specified."
+  ls -lah ipxe/src/bin-x86_64-efi/ipxe.iso
+  exit
+fi
+
 
 rm -fv terraform.tfstate
 #TF_LOG=TRACE terraform apply -var-file .vars -compact-warnings
