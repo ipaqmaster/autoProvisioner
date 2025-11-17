@@ -61,9 +61,9 @@ variable "vsphere_guest_folder" {
   type    = string
   default = null
 }
-variable "guest_disk_size_gigabytes" {
+variable "vsphere_guest_diskgb" {
   type    = number
-  default = 20
+  default = null
 }
 
 
@@ -140,7 +140,7 @@ resource "vsphere_virtual_machine" "terraform" {
 
   disk {
     label            = "disk0"
-    size             = var.guest_disk_size_gigabytes
+    size             = var.vsphere_guest_diskgb
     thin_provisioned = true
   }
 
