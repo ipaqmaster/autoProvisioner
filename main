@@ -5,7 +5,6 @@ scriptDirName=$(basename $scriptRoot)
 threadCount=$(grep ^processor /proc/cpuinfo |wc -l)
 
 
-
 #    _
 #   / \   _ __ __ _ ___
 #  / _ \ | '__/ _` / __|
@@ -44,6 +43,11 @@ do
       shift
       echo "Will give terraform password via stdin."
       terraformAdditionalArgs="-input=false -var-file /dev/stdin <<< vsphere_password=${vsphere_password}"
+    ;;
+
+    --generate)
+      generate_only=1
+      echo "Will only generate an ipxe.iso for this run."
     ;;
     *)
       echo "Unrecognised option: $1"
@@ -167,8 +171,15 @@ fi
 guestAddressOnly="$(cut -d'/' -f1 <<< ${guestAddress})"
 if ping -c1 -W0.2 ${guestAddressOnly} 2>&1 >/dev/null
 then
-  echo "IP ${guestAddressOnly} is actively responding to pings. Pick a different one!"
-  exit 1
+  echo "IP ${guestAddressOnly} is actively responding to pings!"
+
+  if [ -n "${generate_only}" ]
+  then
+    echo "Continuing with generation only. (--generate)"
+  else
+    echo "Pick a different one or pass --generate to generate an ipxe.iso only"
+    exit 1
+  fi
 fi
 
 if [ -z "${guestHostname}" ]
@@ -236,6 +247,13 @@ echo "Building custom image for this guest with $threadCount threads..."
 #make clean
 make -j${threadCount} bin-x86_64-efi/ipxe.iso EMBED=${selectionSafe}.ipxe
 popd
+
+if [ -n "${generate_only}" ]
+then
+  echo "Stopping here as --generate were specified."
+  ls -lah ipxe/src/bin-x86_64-efi/ipxe.iso
+  exit
+fi
 
 # Terraform step
 
