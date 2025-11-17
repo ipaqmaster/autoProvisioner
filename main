@@ -295,6 +295,17 @@ sed -i -E "s/.*%NETWORK%.*/network --activate ${guestDisableIPv6} ${NETWORKING}/
 sed -i -E "s/.*%guestSearch%.*/${guestSearch}/g"                                   "${webRoot}/${kickstartDir}/${selectionKickstartBase}" || { echo "Something went wrong inserting variables." ; exit 1 ;}
 sed -i -E "s/%guestTimezone%/${guestTimezone/\//\\/}/g"                            "${webRoot}/${kickstartDir}/${selectionKickstartBase}" || { echo "Something went wrong inserting variables." ; exit 1 ;}
 
+# If the root password is a non-empty file, read it in. Error if its empty though.
+if [ -f "${guestRootPassword}" ]
+then
+  if [ -s "${guestRootPassword}" ]
+  then
+    echo -ne "guestRootPassword is a file. Reading it in..."
+    guestRootPassword="$(<${guestRootPassword})"
+  fi
+fi
+
+# If the root password isn't a shadow hash, hash it now
 if ! [[ "${guestRootPassword}" =~ ^\$6 ]]
 then
   guestRootPassword="$(echo -ne "${guestRootPassword}" | openssl passwd -6 -stdin)"
