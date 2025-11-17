@@ -1,3 +1,19 @@
 # Here you can add
 # Additional shell script lines
 # To include in kickstart files per-domain
+
+
+#### Install saltstack for example
+##################################
+# echo "Installing salt"
+# #curl -fsSL https://github.com/saltstack/salt-install-guide/releases/latest/download/salt.repo | sudo tee /etc/yum.repos.d/salt.repo
+# #yum install salt-minion -y
+# curl -L https://github.com/saltstack/salt-bootstrap/releases/latest/download/bootstrap-salt.sh | sudo sh -s -- stable 3007.8
+# mkdir -p /etc/salt/minion.d/
+# systemctl enable --now salt-minion & # Key acceptance and states will need to be called from the salt-master.
+
+
+
+#### Eject ipxe.iso after installation finishes
+##################################
+eject /dev/sr0
